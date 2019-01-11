@@ -15,160 +15,110 @@ SerialCommand sCmd(Serial);         // The demo SerialCommand object, initialize
 Adafruit_TMP007 tmp007;
 
 // Create the motor shield object with the default I2C address
-Adafruit_MotorShield AFMS = Adafruit_MotorShield(); 
+Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 // Or, create it with a different I2C address (say for stacking)
-// Adafruit_MotorShield AFMS = Adafruit_MotorShield(0x61); 
+// Adafruit_MotorShield AFMS = Adafruit_MotorShield(0x61);
 
 // Connect a stepper motor with 200 steps per revolution (1.8 degree)
 // to motor port #2 (M3 and M4)
-Adafruit_StepperMotor *myMotor = AFMS.getStepper(200, 2);
+Adafruit_StepperMotor *motor_0 = AFMS.getStepper(200, 2);
 
+const int digital_channels[] = { arduinoLED };
+const Adafruit_StepperMotor* motor_channels[] = { motor_0 };
 
 void setup() {
-   Serial.begin(9600);
-  pinMode(arduinoLED, OUTPUT);      // Configure the onboard LED for output
-  digitalWrite(arduinoLED, LOW);    // default to LED off
+  Serial.begin(9600);
 
- AFMS.begin();  // create with the default frequency 1.6KHz
+  for(int i = 0; i < 1; i++) {
+    pinMode(digital_channels[i], OUTPUT);      // Configure the onboard LED for output
+    digitalWrite(digital_channels[i], LOW);    // default to LED off
+  }
+
+  AFMS.begin();  // create with the default frequency 1.6KHz
   //AFMS.begin(1000);  // OR with a different frequency, say 1KHz
-  
-  myMotor->setSpeed(10);  // 10 rpm   
 
-  
- if (! tmp007.begin()) {
+  if (! tmp007.begin()) {
     Serial.println("No sensor found");
     while (1);
   }
-  
-  // Setup callbacks for SerialCommand commands
-  sCmd.addCommand("ON",    LED_on);          // Turns LED on
-  sCmd.addCommand("OFF",   LED_off);         // Turns LED off
-  sCmd.addCommand("P",     processCommand);  // Converts two arguments to integers and echos them back
-  sCmd.addCommand("TEMP?",     getTemp);  // read the sensor temperature
-  sCmd.setDefaultHandler(unrecognized);      // Handler for command that isn't matched  (says "What?")
-  sCmd.addCommand("F",     forwardCommand);  // turn forward X steps e.g. "F 100" --> turn forward 100 steps
-  sCmd.addCommand("B",     backwardCommand);  // turn backward X steps e.g. "F 100" --> turn forward 100 steps
-  Serial.println("Ready");
 
-  
-  
+  // Setup callbacks for SerialCommand commands
+
+  // DIGITAL <channel: uint> <state: ON | OFF>
+  sCmd.addCommand("DIGITAL", digital_command)
+
+  // STEP <channel: uint> <steps: uint> <speed: uint> <direction: F | B>
+  sCmd.addCommand("STEP", stepper_command);
+
+  // TEMP?
+  sCmd.addCommand("TEMP?", temp_query);
+
+  sCmd.setDefaultHandler(unrecognized);
+
+  Serial.println("Ready");
 }
 
 void loop() {
   int num_bytes = sCmd.readSerial();      // fill the buffer
-  if (num_bytes > 0){
+  if (num_bytes > 0) {
     sCmd.processCommand();  // process the command
   }
   delay(10);
 }
 
+void digital_command(SerialCommand scmd) {
+  char *chan_s = scmd.next();
+  char *state_s = scmd.next();
 
-void LED_on(SerialCommand this_sCmd) {
-  //this_sCmd.println("LED on");
-  digitalWrite(arduinoLED, HIGH);
-}
-
-void LED_off(SerialCommand this_sCmd) {
-  //this_sCmd.println("LED off");
-  digitalWrite(arduinoLED, LOW);
-}
-
-void sayHello(SerialCommand this_sCmd) {
-  char *arg;
-  arg = this_sCmd.next();    // Get the next argument from the SerialCommand object buffer
-  if (arg != NULL) {    // As long as it existed, take it
-    this_sCmd.print("Hello ");
-    this_sCmd.println(arg);
+  if(!(chan_s && state_s)) {
+    scmd.print("DIGITAL must have both <channel> and <state> args");
+    return;
   }
-  else {
-    this_sCmd.println("Hello, whoever you are");
+
+  String state = String(state_s);
+
+  int chan = -1;
+  chan = atoi(chan_s);
+
+  if(state == String("On")) {
+    digitalWrite(digital_channels[chan], HIGH);
+  } else {
+    digitalWrite(digital_channels[chan], LOW);
   }
 }
 
-void getTemp(SerialCommand this_sCmd) {
+
+void getTemp(SerialCommand scmd) {
   float objt = tmp007.readObjTempC();
-  this_sCmd.println(objt);
+  scmd.println(objt);
 }
 
+void stepper_command(SerialCommand scmd) {
+  char *chan_s = scmd.next();
+  char *steps_s = scmd.next();
+  char *speed_s = scmd.next();
+  char *direction_s = scmd.next();
 
-void processCommand(SerialCommand this_sCmd) {
-  int aNumber;
-  char *arg;
+  if(!(chan_s && steps_s && speed_s && direction_s)) {
+    scmd.println("STEP must have four arguments: <channel>, <steps>, <speed>, and <direction>");
+    return;
+  } 
 
-  this_sCmd.println("We're in processCommand");
-  arg = this_sCmd.next();
-  if (arg != NULL) {
-    aNumber = atoi(arg);    // Converts a char string to an integer
-    this_sCmd.print("First argument was: ");
-    this_sCmd.println(aNumber);
-  }
-  else {
-    this_sCmd.println("No arguments");
-  }
+  int chan, steps, speed;
+  chan = atoi(chan_s);
+  steps = atoi(steps_s);
+  speed = atoi(speed_s);
 
-  arg = this_sCmd.next();
-  if (arg != NULL) {
-    aNumber = atol(arg);
-    this_sCmd.print("Second argument was: ");
-    this_sCmd.println(aNumber);
-  }
-  else {
-    this_sCmd.println("No second argument");
-  }
-}
+  Adafruit_StepperMotor *motor = motor_channels[chan];
 
-void forwardCommand(SerialCommand this_sCmd) {
-  int aNumber;
-  char *arg;
+  motor->setSpeed(speed); //RPM
 
-  //this_sCmd.println("We're in processCommand");
-  arg = this_sCmd.next();
-  if (arg != NULL) {
-    aNumber = atoi(arg);    // Converts a char string to an integer
-    //this_sCmd.print("First argument was: ");
-    //this_sCmd.println(aNumber);
-    myMotor->step(aNumber, FORWARD, SINGLE); 
-  }
-  else {
-    //this_sCmd.println("No arguments");
+  if(*direction_s == 'F') {
+    motor->step(steps, FORWARD, SINGLE);
+  } else {
+    motor->step(steps, BACKWARD, SINGLE);
   }
 
-  arg = this_sCmd.next();
-  if (arg != NULL) {
-    aNumber = atol(arg);
-    //this_sCmd.print("Second argument was: ");
-    this_sCmd.println(aNumber);
-  }
-  else {
-    //this_sCmd.println("No second argument");
-  }
-}
-
-void backwardCommand(SerialCommand this_sCmd) {
-  int aNumber;
-  char *arg;
-
-  //this_sCmd.println("We're in processCommand");
-  arg = this_sCmd.next();
-  if (arg != NULL) {
-    aNumber = atoi(arg);    // Converts a char string to an integer
-    //this_sCmd.print("First argument was: ");
-    //this_sCmd.println(aNumber);
-    myMotor->step(aNumber, BACKWARD, SINGLE); 
-  }
-  else {
-    //this_sCmd.println("No arguments");
-  }
-
-  arg = this_sCmd.next();
-  if (arg != NULL) {
-    aNumber = atol(arg);
-    this_sCmd.print("Second argument was: ");
-    this_sCmd.println(aNumber);
-  }
-  else {
-    //this_sCmd.println("No second argument");
-  }
 }
 
 // This gets set as the default handler, and gets called when no other command matches.
