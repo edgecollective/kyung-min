@@ -45,7 +45,7 @@ void setup() {
   // Setup callbacks for SerialCommand commands
 
   // DIGITAL <channel: uint> <state: ON | OFF>
-  sCmd.addCommand("DIGITAL", digital_command)
+  sCmd.addCommand("DIGITAL", digital_command);
 
   // STEP <channel: uint> <steps: uint> <speed: uint> <direction: F | B>
   sCmd.addCommand("STEP", stepper_command);
@@ -88,7 +88,7 @@ void digital_command(SerialCommand scmd) {
 }
 
 
-void getTemp(SerialCommand scmd) {
+void temp_query(SerialCommand scmd) {
   float objt = tmp007.readObjTempC();
   scmd.println(objt);
 }
