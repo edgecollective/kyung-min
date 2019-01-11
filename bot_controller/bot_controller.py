@@ -17,16 +17,16 @@ class Core:
         self.serial.flushInput()
 
     def _send(self, message):
-        self.serial.write(f'{message}\n'.encode('latin-1'))
+        self.serial.write(('%s\n' % message).encode('latin-1'))
                
-    def stepper(self, steps, speed=10, direction=Direction.forward):
-        self._send(f'STEP 0 {steps} {speed} {direction.value}')
+    def stepper(self, channel, steps, speed=10, direction=Direction.forward):
+        self._send('STEP %d %d %d %s' % (channel, steps, speed, direction.value))
 
-    def digital(self, state):
-        self._send(f'DIGITAL 0 {state.value}')
+    def digital(self, channel, state):
+        self._send('DIGITAL %d %s' % (channel, state.value))
         
     def get_temp(self):
-        self._send(f'TEMP?')
+        self._send('TEMP?')
         serial_data = self.serial.readline().strip()
         return float(serial_data)
         
