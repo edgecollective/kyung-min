@@ -24,7 +24,7 @@ Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_StepperMotor *motor_0 = AFMS.getStepper(200, 2);
 
 const int digital_channels[] = { arduinoLED };
-const Adafruit_StepperMotor* motor_channels[] = { motor_0 };
+Adafruit_StepperMotor* motor_channels[] = { motor_0 };
 
 void setup() {
   Serial.begin(9600);
