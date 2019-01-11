@@ -80,7 +80,7 @@ void digital_command(SerialCommand scmd) {
   int chan = -1;
   chan = atoi(chan_s);
 
-  if(state == String("On")) {
+  if(state == String("ON")) {
     digitalWrite(digital_channels[chan], HIGH);
   } else {
     digitalWrite(digital_channels[chan], LOW);
