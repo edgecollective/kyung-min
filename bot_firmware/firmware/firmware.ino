@@ -5,10 +5,9 @@
 
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
+#include <Servo.h>
 #include "Adafruit_TMP007.h"
 #include <SerialCommand.h>
-
-#define arduinoLED 13   // Arduino LED on board
 
 SerialCommand sCmd(Serial);         // The demo SerialCommand object, initialize with any Stream object
 
@@ -21,18 +20,33 @@ Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 
 // Connect a stepper motor with 200 steps per revolution (1.8 degree)
 // to motor port #2 (M3 and M4)
-Adafruit_StepperMotor *motor_0 = AFMS.getStepper(200, 2);
+Adafruit_StepperMotor *motor_0 = AFMS.getStepper(200, 1);
+Adafruit_StepperMotor *motor_1 = AFMS.getStepper(200, 2);
 
-const int digital_channels[] = { arduinoLED };
-Adafruit_StepperMotor* motor_channels[] = { motor_0 };
+#define MOTOR_CHANNEL_COUNT 2
+Adafruit_StepperMotor* motor_channels[] = { motor_0, motor_1 };
+
+Servo servo_0;
+Servo servo_1;
+
+#define SERVO_CHANNEL_COUNT 2
+Servo servo_chanels[] = { servo_0, servo_1 };
+
+const int init_digital_channels[] = { 13 };
 
 void setup() {
   Serial.begin(9600);
 
   for(int i = 0; i < 1; i++) {
-    pinMode(digital_channels[i], OUTPUT);      // Configure the onboard LED for output
-    digitalWrite(digital_channels[i], LOW);    // default to LED off
+    pinMode(init_digital_channels[i], OUTPUT);      // Configure the onboard LED for output
+    digitalWrite(init_digital_channels[i], LOW);    // default to LED off
   }
+
+  servo_0.attach(10);
+  servo_0.write(0);
+
+  servo_1.attach(11);
+  servo_1.write(0);
 
   AFMS.begin();  // create with the default frequency 1.6KHz
   //AFMS.begin(1000);  // OR with a different frequency, say 1KHz
@@ -44,11 +58,14 @@ void setup() {
 
   // Setup callbacks for SerialCommand commands
 
-  // DIGITAL <channel: uint> <state: ON | OFF>
+  // DIGITAL <PIN: uint> <state: ON | OFF>
   sCmd.addCommand("DIGITAL", digital_command);
 
-  // STEP <channel: uint> <steps: uint> <speed: uint> <direction: F | B>
+  // STEP <channel: 1 | 2> <steps: uint> <speed: uint> <direction: F | B>
   sCmd.addCommand("STEP", stepper_command);
+
+  // SERVO <channel> <angle: uint>
+  sCmd.addCommand("SERVO", servo_command);
 
   // TEMP?
   sCmd.addCommand("TEMP?", temp_query);
@@ -66,12 +83,36 @@ void loop() {
   delay(10);
 }
 
+void servo_command(SerialCommand scmd) {
+  char *chan_s = scmd.next();
+  char *angle_s = scmd.next();
+
+  if(!(chan_s && angle_s)) {
+    scmd.println("SERVO must have both <channel> and <angle> args");
+    return;
+  }
+
+  int chan, angle;
+  chan = atoi(chan_s);
+  angle = atoi(angle_s);
+
+  chan--;
+
+  if(chan < 0 || chan > SERVO_CHANNEL_COUNT) {
+    scmd.println("SERVO Channel must be 1.");
+    return;
+  }
+
+  servo_chanels[chan].write(angle);
+  scmd.println("OK.");
+}
+
 void digital_command(SerialCommand scmd) {
   char *chan_s = scmd.next();
   char *state_s = scmd.next();
 
   if(!(chan_s && state_s)) {
-    scmd.print("DIGITAL must have both <channel> and <state> args");
+    scmd.println("DIGITAL must have both <channel> and <state> args");
     return;
   }
 
@@ -81,10 +122,12 @@ void digital_command(SerialCommand scmd) {
   chan = atoi(chan_s);
 
   if(state == String("ON")) {
-    digitalWrite(digital_channels[chan], HIGH);
+    digitalWrite(chan, HIGH);
   } else {
-    digitalWrite(digital_channels[chan], LOW);
+    digitalWrite(chan, LOW);
   }
+
+  scmd.println("OK.");
 }
 
 
@@ -109,6 +152,12 @@ void stepper_command(SerialCommand scmd) {
   steps = atoi(steps_s);
   speed = atoi(speed_s);
 
+  chan--;
+  if(chan < 0 || chan > MOTOR_CHANNEL_COUNT) {
+    scmd.println("Motor channel must be 1 or 2.");
+    return;
+  }
+
   Adafruit_StepperMotor *motor = motor_channels[chan];
 
   motor->setSpeed(speed); //RPM
@@ -119,6 +168,7 @@ void stepper_command(SerialCommand scmd) {
     motor->step(steps, BACKWARD, SINGLE);
   }
 
+  scmd.println("OK.");
 }
 
 // This gets set as the default handler, and gets called when no other command matches.
