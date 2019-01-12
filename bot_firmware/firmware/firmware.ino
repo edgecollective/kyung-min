@@ -36,6 +36,15 @@ Servo servo_chanels[] = { servo_0, servo_1 };
 
 const int init_digital_channels[] = { 13 };
 
+typedef struct ex_stepper_t {
+  unsigned char direction_pin;
+  unsigned char pulse_pin;
+} ex_stepper;
+
+const ex_stepper ex_stepper_channels[] = {
+  { 6, 12 }
+};
+
 void setup() {
   Serial.begin(9600);
 
@@ -65,11 +74,16 @@ void setup() {
 
   // Setup callbacks for SerialCommand commands
 
+  sCmd.addCommand("HI", hello_command);
+
   // DIGITAL <PIN: uint> <state: ON | OFF>
   sCmd.addCommand("DIGITAL", digital_command);
 
   // STEP <channel: 1 | 2> <steps: uint> <speed: uint> <direction: F | B>
   sCmd.addCommand("STEP", stepper_command);
+
+  // STEP <pin> <steps: uint> <speed: uint> <direction: F | B>
+  sCmd.addCommand("EXSTEP", ex_stepper_command);
 
   // SERVO <channel> <angle: uint>
   sCmd.addCommand("SERVO", servo_command);
@@ -91,6 +105,10 @@ void loop() {
     sCmd.processCommand();  // process the command
   }
   delay(10);
+}
+
+void hello_command(SerialCommand scmd) {
+  scmd.println("Hello!");
 }
 
 void servo_command(SerialCommand scmd) {
@@ -187,6 +205,44 @@ void stepper_command(SerialCommand scmd) {
     motor->step(steps, FORWARD, SINGLE);
   } else {
     motor->step(steps, BACKWARD, SINGLE);
+  }
+
+  scmd.println("OK.");
+}
+
+void ex_stepper_command(SerialCommand scmd) {
+  char *chan_s = scmd.next();
+  char *steps_s = scmd.next();
+  char *speed_s = scmd.next();
+  char *direction_s = scmd.next();
+
+  if(!(chan_s && steps_s && speed_s && direction_s)) {
+    scmd.println("EXSTEP must have four arguments: <channel>, <steps>, <speed>, and <direction>");
+    return;
+  } 
+
+  int chan, steps, speed;
+  chan = atoi(chan_s);
+  steps = atoi(steps_s);
+  speed = atoi(speed_s);
+
+  chan--;
+  if(chan < 0 || chan > MOTOR_CHANNEL_COUNT) {
+    scmd.println("Motor channel must be 1 or 2.");
+    return;
+  }
+
+  const ex_stepper motor = ex_stepper_channels[chan];
+
+  digitalWrite(motor.direction_pin, *direction_s == 'F');
+
+  speed = max(100 - speed, 1);
+
+  for(int i = 0; i < steps; i++) {
+    digitalWrite(motor.pulse_pin, HIGH);
+    delay(speed);
+    digitalWrite(motor.pulse_pin, LOW);
+    delay(speed);
   }
 
   scmd.println("OK.");
