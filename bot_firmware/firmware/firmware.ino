@@ -34,7 +34,8 @@ Servo servo_1;
 #define SERVO_CHANNEL_COUNT 2
 Servo servo_chanels[] = { servo_0, servo_1 };
 
-const int init_digital_channels[] = { 13 };
+#define NUM_DIGITAL_CHANNELS 3
+const int init_digital_channels[] = { 22, 23, 24 };
 
 typedef struct ex_stepper_t {
   unsigned char direction_pin;
@@ -45,32 +46,42 @@ const ex_stepper ex_stepper_channels[] = {
   { 6, 12 }
 };
 
+static volatile unsigned long last_interrupt_time = 0;
+static volatile bool btn_1_state = 1;
+static volatile bool btn_2_state = 1;
+
 void setup() {
+
+  for(int i = 0; i < NUM_DIGITAL_CHANNELS; i++) {
+    pinMode(init_digital_channels[i], OUTPUT);      // Configure the onboard LED for output
+    digitalWrite(init_digital_channels[i], HIGH);    // default to LED off
+  }
+
+  digitalWrite(22, LOW);
+
   Serial.begin(9600);
 
-  for(int i = 0; i < 1; i++) {
-    pinMode(init_digital_channels[i], OUTPUT);      // Configure the onboard LED for output
-    digitalWrite(init_digital_channels[i], LOW);    // default to LED off
-  }
 
-  servo_0.attach(10);
-  servo_0.write(0);
+ servo_0.attach(13);
+ servo_0.write(0);
 
-  servo_1.attach(11);
-  servo_1.write(0);
+ servo_1.attach(12);
+ servo_1.write(0);
 
-  AFMS.begin();  // create with the default frequency 1.6KHz
+ digitalWrite(23, LOW);
+
+ AFMS.begin();  // create with the default frequency 1.6KHz
   //AFMS.begin(1000);  // OR with a different frequency, say 1KHz
 
-  if (!tmp007.begin()) {
-    Serial.println("No sensor found");
-    while (1);
-  }
-
-  if (!lox.begin()) {
-    Serial.println(F("Failed to boot VL53L0X"));
-    while(1);
-  }
+//  if (!tmp007.begin()) {
+//    Serial.println("No sensor found");
+//    // while (1);
+//  }
+//
+//  if (!lox.begin()) {
+//    Serial.println(F("Failed to boot VL53L0X"));
+//    // while(1);
+//  }
 
   // Setup callbacks for SerialCommand commands
 
@@ -96,7 +107,32 @@ void setup() {
 
   sCmd.setDefaultHandler(unrecognized);
 
+  // Button Interrupts
+  attachInterrupt(digitalPinToInterrupt(5), btn_0_rise, FALLING);
+  attachInterrupt(digitalPinToInterrupt(6), btn_1_rise, FALLING);
+
+  digitalWrite(24, LOW);
   Serial.println("Ready");
+}
+
+void btn_0_rise() {
+  unsigned long interrupt_time = millis();
+  
+  if(interrupt_time - last_interrupt_time > 2) {
+    motor_channels[0]->step(50, BACKWARD, SINGLE);
+  }
+  
+  last_interrupt_time = interrupt_time;
+}
+
+void btn_1_rise() {
+  unsigned long interrupt_time = millis();
+  
+  if(interrupt_time - last_interrupt_time > 2) {
+    motor_channels[0]->step(50, FORWARD, SINGLE);
+  }
+  
+  last_interrupt_time = interrupt_time;
 }
 
 void loop() {
