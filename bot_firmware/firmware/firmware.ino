@@ -3,15 +3,17 @@
 // based on code from Steven Cogswell, May 2011
 
 
-#include <Wire.h>
-#include <Adafruit_MotorShield.h>
-#include <Servo.h>
 #include "Adafruit_TMP007.h"
+#include "Adafruit_VL53L0X.h"
+#include <Adafruit_MotorShield.h>
 #include <SerialCommand.h>
+#include <Servo.h>
+#include <Wire.h>
 
 SerialCommand sCmd(Serial);         // The demo SerialCommand object, initialize with any Stream object
 
 Adafruit_TMP007 tmp007;
+Adafruit_VL53L0X lox = Adafruit_VL53L0X();
 
 // Create the motor shield object with the default I2C address
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
@@ -51,9 +53,14 @@ void setup() {
   AFMS.begin();  // create with the default frequency 1.6KHz
   //AFMS.begin(1000);  // OR with a different frequency, say 1KHz
 
-  if (! tmp007.begin()) {
+  if (!tmp007.begin()) {
     Serial.println("No sensor found");
     while (1);
+  }
+
+  if (!lox.begin()) {
+    Serial.println(F("Failed to boot VL53L0X"));
+    while(1);
   }
 
   // Setup callbacks for SerialCommand commands
@@ -69,6 +76,9 @@ void setup() {
 
   // TEMP?
   sCmd.addCommand("TEMP?", temp_query);
+
+  // DIST?
+  sCmd.addCommand("DIST?", range_query);
 
   sCmd.setDefaultHandler(unrecognized);
 
@@ -134,6 +144,17 @@ void digital_command(SerialCommand scmd) {
 void temp_query(SerialCommand scmd) {
   float objt = tmp007.readObjTempC();
   scmd.println(objt);
+}
+
+void range_query(SerialCommand scmd) {
+  VL53L0X_RangingMeasurementData_t measure;
+  lox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
+
+  if (measure.RangeStatus != 4) {  // phase failures have incorrect data
+    scmd.println(measure.RangeMilliMeter);
+  } else {
+    scmd.println("NaN");
+  } 
 }
 
 void stepper_command(SerialCommand scmd) {

@@ -22,28 +22,34 @@ class Core:
     def stepper(self, channel, steps, speed=10, direction=Direction.forward):
         self._send('STEP %d %d %d %s' % (channel, steps, speed, direction.value))
         
-        time.sleep(.2)
+        time.sleep(.005)
         serial_data = self.serial.readline().strip()
         return serial_data == b'OK.'
         
     def servo(self, channel, angle):
         self._send('SERVO %d %d' % (channel, angle))
         
-        time.sleep(.2)
+        time.sleep(.005)
         serial_data = self.serial.readline().strip()
         return serial_data == b'OK.'
 
     def digital(self, channel, state):
         self._send('DIGITAL %d %s' % (channel, state.value))
         
-        time.sleep(.2)
+        time.sleep(.005)
         serial_data = self.serial.readline().strip()
         return serial_data == b'OK.'
         
     def get_temp(self):
         self._send('TEMP?')
         
-        time.sleep(.2)
+        time.sleep(.005)
         serial_data = self.serial.readline().strip()
         return float(serial_data)
         
+    def get_distance(self):
+        self._send('DIST?')
+        
+        time.sleep(.005)
+        serial_data = self.serial.readline().strip()
+        return float(serial_data)
