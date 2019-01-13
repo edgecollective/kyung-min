@@ -2,6 +2,8 @@
 // Craig Versek, Jan 2014
 // based on code from Steven Cogswell, May 2011
 
+#define DEBOUNCE_INTERVAL_SERVO 200
+#define DEBOUNCE_INTERVAL_STEPPER 20
 
 #include "Adafruit_TMP007.h"
 #include "Adafruit_VL53L0X.h"
@@ -46,15 +48,26 @@ const ex_stepper ex_stepper_channels[] = {
   { 6, 12 }
 };
 
+#define NUM_BUTTONS 8
+const unsigned char button_pins[] = { 5, 6, 9, 10, 11, 17, 18, 19 };
+
+static volatile unsigned char poll_17_state = 1;
+static volatile unsigned char poll_18_state = 1;
+static volatile unsigned char poll_19_state = 1;
+
 static volatile unsigned long last_interrupt_time = 0;
-static volatile bool btn_1_state = 1;
-static volatile bool btn_2_state = 1;
+static volatile short servo_0_angle = 0;
+static volatile short servo_1_angle = 0;
 
 void setup() {
 
   for(int i = 0; i < NUM_DIGITAL_CHANNELS; i++) {
     pinMode(init_digital_channels[i], OUTPUT);      // Configure the onboard LED for output
     digitalWrite(init_digital_channels[i], HIGH);    // default to LED off
+  }
+
+  for(int i = 0; i < NUM_BUTTONS; i++) {
+    pinMode(button_pins[i], INPUT);
   }
 
   digitalWrite(22, LOW);
@@ -108,31 +121,16 @@ void setup() {
   sCmd.setDefaultHandler(unrecognized);
 
   // Button Interrupts
-  attachInterrupt(digitalPinToInterrupt(5), btn_0_rise, FALLING);
-  attachInterrupt(digitalPinToInterrupt(6), btn_1_rise, FALLING);
+  // N.B. We don't interrupt on the last 3 because
+  // they end up using the same interrupts as these other pins
+  attachInterrupt(digitalPinToInterrupt(5), btn_0_fall, FALLING);
+  attachInterrupt(digitalPinToInterrupt(6), btn_1_fall, FALLING); // Intereferes with 17?
+  attachInterrupt(digitalPinToInterrupt(9), btn_2_fall, FALLING);
+  attachInterrupt(digitalPinToInterrupt(10), btn_3_fall, FALLING);
+  attachInterrupt(digitalPinToInterrupt(11), btn_4_fall, FALLING);
 
   digitalWrite(24, LOW);
   Serial.println("Ready");
-}
-
-void btn_0_rise() {
-  unsigned long interrupt_time = millis();
-  
-  if(interrupt_time - last_interrupt_time > 2) {
-    motor_channels[0]->step(50, BACKWARD, SINGLE);
-  }
-  
-  last_interrupt_time = interrupt_time;
-}
-
-void btn_1_rise() {
-  unsigned long interrupt_time = millis();
-  
-  if(interrupt_time - last_interrupt_time > 2) {
-    motor_channels[0]->step(50, FORWARD, SINGLE);
-  }
-  
-  last_interrupt_time = interrupt_time;
 }
 
 void loop() {
@@ -140,6 +138,27 @@ void loop() {
   if (num_bytes > 0) {
     sCmd.processCommand();  // process the command
   }
+
+  auto state_17 = digitalRead(17);
+  auto state_18 = digitalRead(18);
+  auto state_19 = digitalRead(19);
+
+  if(!state_17 && poll_17_state) {
+    btn_7_fall();
+  }
+
+  if(!state_18 && poll_18_state) {
+    btn_6_fall();
+  }
+
+  if(!state_19 && poll_19_state) {
+    btn_5_fall();
+  }
+
+  poll_17_state = state_17;
+  poll_18_state = state_18;
+  poll_19_state = state_19;
+
   delay(10);
 }
 
@@ -290,4 +309,106 @@ void unrecognized(SerialCommand this_sCmd) {
   this_sCmd.print("Did not recognize \"");
   this_sCmd.print(command.name);
   this_sCmd.println("\" as a command.");
+}
+
+////// Button Interrupt Handlers ///////////////////////////////////////////////
+
+void btn_0_fall() {
+  unsigned long interrupt_time = millis();
+  
+  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
+    motor_channels[0]->step(50, BACKWARD, SINGLE);
+  }
+  last_interrupt_time = interrupt_time;
+}
+
+void btn_1_fall() {
+  unsigned long interrupt_time = millis();
+  
+  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
+    motor_channels[0]->step(50, FORWARD, SINGLE);
+  }
+  last_interrupt_time = interrupt_time;
+}
+
+void btn_2_fall() {
+  unsigned long interrupt_time = millis();
+  
+  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
+    motor_channels[1]->step(50, FORWARD, SINGLE);
+    last_interrupt_time = interrupt_time;
+  }
+}
+
+void btn_3_fall() {
+  unsigned long interrupt_time = millis();
+  
+  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
+    motor_channels[1]->step(50, BACKWARD, SINGLE);
+  }
+  last_interrupt_time = interrupt_time;
+}
+
+void btn_4_fall() {
+  unsigned long interrupt_time = millis();
+  digitalWrite(23, HIGH);
+
+  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
+    servo_0_angle += 45;
+    if(servo_0_angle > 180) {
+      servo_0_angle = 0;
+    }
+
+    servo_0.write(servo_0_angle);
+    last_interrupt_time = interrupt_time;
+  }
+}
+
+void btn_5_fall() {
+  unsigned long interrupt_time = millis();
+  digitalWrite(23, LOW);
+  
+  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
+    servo_0_angle -= 45;
+
+    if(servo_0_angle < 0) {
+      servo_0_angle = 180;
+    }
+
+    servo_0.write(servo_0_angle);
+    last_interrupt_time = interrupt_time;
+  }
+}
+
+void btn_6_fall() {
+  unsigned long interrupt_time = millis();
+
+  digitalWrite(22, HIGH);
+  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
+    servo_1_angle += 45;
+    if(servo_1_angle > 180) {
+      servo_1_angle = 0;
+    }
+
+    servo_1.write(servo_1_angle);
+    last_interrupt_time = interrupt_time;
+  }
+  
+}
+
+void btn_7_fall() {
+  unsigned long interrupt_time = millis();
+
+  digitalWrite(22, LOW);
+  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
+    servo_1_angle -= 45;
+
+    if(servo_1_angle < 0) {
+      servo_1_angle = 180;
+    }
+
+    servo_1.write(servo_1_angle);
+    last_interrupt_time = interrupt_time;
+  }
+  
 }
