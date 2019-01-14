@@ -2,6 +2,8 @@
 // Craig Versek, Jan 2014
 // based on code from Steven Cogswell, May 2011
 
+// #define WITH_DISPLAY
+
 #define DEBOUNCE_INTERVAL_SERVO 200
 #define DEBOUNCE_INTERVAL_STEPPER 20
 
@@ -11,6 +13,14 @@
 #include <SerialCommand.h>
 #include <Servo.h>
 #include <Wire.h>
+
+#ifdef WITH_DISPLAY
+
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+Adafruit_SSD1306 display = Adafruit_SSD1306(128, 32, &Wire);
+
+#endif
 
 SerialCommand sCmd(Serial);         // The demo SerialCommand object, initialize with any Stream object
 
@@ -45,7 +55,7 @@ typedef struct ex_stepper_t {
 } ex_stepper;
 
 const ex_stepper ex_stepper_channels[] = {
-  { 6, 12 }
+  { 15, 14 }
 };
 
 #define NUM_BUTTONS 8
@@ -59,42 +69,56 @@ static volatile unsigned long last_interrupt_time = 0;
 static volatile short servo_0_angle = 0;
 static volatile short servo_1_angle = 0;
 
+static volatile unsigned char has_temp = 1;
+static volatile unsigned char has_dist = 1;
+
+#ifdef WITH_DISPLAY
+static volatile unsigned char should_update_display = 1;
+volatile float last_temp = 0;
+volatile float last_dist = 0;
+#endif
+
 void setup() {
 
-  for(int i = 0; i < NUM_DIGITAL_CHANNELS; i++) {
+#ifdef WITH_DISPLAY
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C); // Address 0x3C for 128x32
+  display.display();
+#endif
+
+  for (int i = 0; i < NUM_DIGITAL_CHANNELS; i++) {
     pinMode(init_digital_channels[i], OUTPUT);      // Configure the onboard LED for output
     digitalWrite(init_digital_channels[i], HIGH);    // default to LED off
   }
 
-  for(int i = 0; i < NUM_BUTTONS; i++) {
+  for (int i = 0; i < NUM_BUTTONS; i++) {
     pinMode(button_pins[i], INPUT);
   }
-
-  digitalWrite(22, LOW);
 
   Serial.begin(9600);
 
 
- servo_0.attach(13);
- servo_0.write(0);
+  servo_0.attach(13);
+  servo_0.write(0);
 
- servo_1.attach(12);
- servo_1.write(0);
+  servo_1.attach(12);
+  servo_1.write(0);
 
- digitalWrite(23, LOW);
-
- AFMS.begin();  // create with the default frequency 1.6KHz
+  AFMS.begin();  // create with the default frequency 1.6KHz
   //AFMS.begin(1000);  // OR with a different frequency, say 1KHz
 
-//  if (!tmp007.begin()) {
-//    Serial.println("No sensor found");
-//    // while (1);
-//  }
-//
-//  if (!lox.begin()) {
-//    Serial.println(F("Failed to boot VL53L0X"));
-//    // while(1);
-//  }
+  if (!tmp007.begin()) {
+    Serial.println("No temperature sensor found");
+    has_temp = 0;
+  }
+  digitalWrite(22, LOW);
+
+
+  if (!lox.begin()) {
+    Serial.println(F("Failed to boot VL53L0X"));
+    has_dist = 0;
+  }
+  digitalWrite(23, LOW);
+
 
   // Setup callbacks for SerialCommand commands
 
@@ -133,25 +157,67 @@ void setup() {
   Serial.println("Ready");
 }
 
+#ifdef WITH_DISPLAY
+
+void update_display() {
+  // text display tests
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+
+  char buffer[50] = { 0 };
+
+
+  display.println("Ready.");
+
+  if (has_temp) {
+    sprintf(buffer, "Temp: %f", last_temp);
+    display.println(buffer);
+    memset(buffer, 0, sizeof(buffer));
+  }
+
+  if (has_dist) {
+    sprintf(buffer, "Dist: %f", last_dist);
+    display.println(buffer);
+    memset(buffer, 0, sizeof(buffer));
+  }
+
+
+  display.setCursor(0, 0);
+  display.display(); // actually display all of the above
+}
+
+#endif
+
 void loop() {
   int num_bytes = sCmd.readSerial();      // fill the buffer
   if (num_bytes > 0) {
     sCmd.processCommand();  // process the command
   }
 
+#ifdef WITH_DISPLAY
+
+  if (should_update_display) {
+    update_display();
+    should_update_display = 0;
+  }
+
+#endif
+
   auto state_17 = digitalRead(17);
   auto state_18 = digitalRead(18);
   auto state_19 = digitalRead(19);
 
-  if(!state_17 && poll_17_state) {
+  if (!state_17 && poll_17_state) {
     btn_7_fall();
   }
 
-  if(!state_18 && poll_18_state) {
+  if (!state_18 && poll_18_state) {
     btn_6_fall();
   }
 
-  if(!state_19 && poll_19_state) {
+  if (!state_19 && poll_19_state) {
     btn_5_fall();
   }
 
@@ -170,7 +236,7 @@ void servo_command(SerialCommand scmd) {
   char *chan_s = scmd.next();
   char *angle_s = scmd.next();
 
-  if(!(chan_s && angle_s)) {
+  if (!(chan_s && angle_s)) {
     scmd.println("SERVO must have both <channel> and <angle> args");
     return;
   }
@@ -181,7 +247,7 @@ void servo_command(SerialCommand scmd) {
 
   chan--;
 
-  if(chan < 0 || chan > SERVO_CHANNEL_COUNT) {
+  if (chan < 0 || chan > SERVO_CHANNEL_COUNT) {
     scmd.println("SERVO Channel must be 1.");
     return;
   }
@@ -194,7 +260,7 @@ void digital_command(SerialCommand scmd) {
   char *chan_s = scmd.next();
   char *state_s = scmd.next();
 
-  if(!(chan_s && state_s)) {
+  if (!(chan_s && state_s)) {
     scmd.println("DIGITAL must have both <channel> and <state> args");
     return;
   }
@@ -204,7 +270,7 @@ void digital_command(SerialCommand scmd) {
   int chan = -1;
   chan = atoi(chan_s);
 
-  if(state == String("ON")) {
+  if (state == String("ON")) {
     digitalWrite(chan, HIGH);
   } else {
     digitalWrite(chan, LOW);
@@ -227,7 +293,7 @@ void range_query(SerialCommand scmd) {
     scmd.println(measure.RangeMilliMeter);
   } else {
     scmd.println("NaN");
-  } 
+  }
 }
 
 void stepper_command(SerialCommand scmd) {
@@ -236,10 +302,10 @@ void stepper_command(SerialCommand scmd) {
   char *speed_s = scmd.next();
   char *direction_s = scmd.next();
 
-  if(!(chan_s && steps_s && speed_s && direction_s)) {
+  if (!(chan_s && steps_s && speed_s && direction_s)) {
     scmd.println("STEP must have four arguments: <channel>, <steps>, <speed>, and <direction>");
     return;
-  } 
+  }
 
   int chan, steps, speed;
   chan = atoi(chan_s);
@@ -247,7 +313,7 @@ void stepper_command(SerialCommand scmd) {
   speed = atoi(speed_s);
 
   chan--;
-  if(chan < 0 || chan > MOTOR_CHANNEL_COUNT) {
+  if (chan < 0 || chan > MOTOR_CHANNEL_COUNT) {
     scmd.println("Motor channel must be 1 or 2.");
     return;
   }
@@ -256,7 +322,7 @@ void stepper_command(SerialCommand scmd) {
 
   motor->setSpeed(speed); //RPM
 
-  if(*direction_s == 'F') {
+  if (*direction_s == 'F') {
     motor->step(steps, FORWARD, SINGLE);
   } else {
     motor->step(steps, BACKWARD, SINGLE);
@@ -271,10 +337,10 @@ void ex_stepper_command(SerialCommand scmd) {
   char *speed_s = scmd.next();
   char *direction_s = scmd.next();
 
-  if(!(chan_s && steps_s && speed_s && direction_s)) {
+  if (!(chan_s && steps_s && speed_s && direction_s)) {
     scmd.println("EXSTEP must have four arguments: <channel>, <steps>, <speed>, and <direction>");
     return;
-  } 
+  }
 
   int chan, steps, speed;
   chan = atoi(chan_s);
@@ -282,7 +348,7 @@ void ex_stepper_command(SerialCommand scmd) {
   speed = atoi(speed_s);
 
   chan--;
-  if(chan < 0 || chan > MOTOR_CHANNEL_COUNT) {
+  if (chan < 0 || chan > MOTOR_CHANNEL_COUNT) {
     scmd.println("Motor channel must be 1 or 2.");
     return;
   }
@@ -291,13 +357,13 @@ void ex_stepper_command(SerialCommand scmd) {
 
   digitalWrite(motor.direction_pin, *direction_s == 'F');
 
-  speed = max(100 - speed, 1);
+  speed = max(1000 - speed, 1);
 
-  for(int i = 0; i < steps; i++) {
+  for (int i = 0; i < steps; i++) {
     digitalWrite(motor.pulse_pin, HIGH);
-    delay(speed);
+    delayMicroseconds(speed);
     digitalWrite(motor.pulse_pin, LOW);
-    delay(speed);
+    delayMicroseconds(speed);
   }
 
   scmd.println("OK.");
@@ -315,8 +381,8 @@ void unrecognized(SerialCommand this_sCmd) {
 
 void btn_0_fall() {
   unsigned long interrupt_time = millis();
-  
-  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
+
+  if (interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
     motor_channels[0]->step(50, BACKWARD, SINGLE);
   }
   last_interrupt_time = interrupt_time;
@@ -324,8 +390,8 @@ void btn_0_fall() {
 
 void btn_1_fall() {
   unsigned long interrupt_time = millis();
-  
-  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
+
+  if (interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
     motor_channels[0]->step(50, FORWARD, SINGLE);
   }
   last_interrupt_time = interrupt_time;
@@ -333,8 +399,8 @@ void btn_1_fall() {
 
 void btn_2_fall() {
   unsigned long interrupt_time = millis();
-  
-  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
+
+  if (interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
     motor_channels[1]->step(50, FORWARD, SINGLE);
     last_interrupt_time = interrupt_time;
   }
@@ -342,8 +408,8 @@ void btn_2_fall() {
 
 void btn_3_fall() {
   unsigned long interrupt_time = millis();
-  
-  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
+
+  if (interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_STEPPER) {
     motor_channels[1]->step(50, BACKWARD, SINGLE);
   }
   last_interrupt_time = interrupt_time;
@@ -351,11 +417,10 @@ void btn_3_fall() {
 
 void btn_4_fall() {
   unsigned long interrupt_time = millis();
-  digitalWrite(23, HIGH);
 
-  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
+  if (interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
     servo_0_angle += 45;
-    if(servo_0_angle > 180) {
+    if (servo_0_angle > 180) {
       servo_0_angle = 0;
     }
 
@@ -366,12 +431,11 @@ void btn_4_fall() {
 
 void btn_5_fall() {
   unsigned long interrupt_time = millis();
-  digitalWrite(23, LOW);
-  
-  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
+
+  if (interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
     servo_0_angle -= 45;
 
-    if(servo_0_angle < 0) {
+    if (servo_0_angle < 0) {
       servo_0_angle = 180;
     }
 
@@ -383,32 +447,36 @@ void btn_5_fall() {
 void btn_6_fall() {
   unsigned long interrupt_time = millis();
 
-  digitalWrite(22, HIGH);
-  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
+  if (interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
     servo_1_angle += 45;
-    if(servo_1_angle > 180) {
+    if (servo_1_angle > 180) {
       servo_1_angle = 0;
     }
 
     servo_1.write(servo_1_angle);
     last_interrupt_time = interrupt_time;
   }
-  
+
 }
 
 void btn_7_fall() {
   unsigned long interrupt_time = millis();
 
-  digitalWrite(22, LOW);
-  if(interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
+  if (interrupt_time - last_interrupt_time > DEBOUNCE_INTERVAL_SERVO) {
     servo_1_angle -= 45;
 
-    if(servo_1_angle < 0) {
+    if (servo_1_angle < 0) {
       servo_1_angle = 180;
     }
 
     servo_1.write(servo_1_angle);
+
+#ifdef WITH_DISPLAY
+    last_temp = tmp007.readObjTempC();
+    should_update_display = 1;
+#endif
+
     last_interrupt_time = interrupt_time;
   }
-  
+
 }
