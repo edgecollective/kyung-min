@@ -26,6 +26,13 @@ class Core:
         serial_data = self.serial.readline().strip()
         return serial_data == b'OK.'
         
+    def external_stepper(self, channel, steps, speed=10, direction=Direction.forward):
+        self._send('EXSTEP %d %d %d %s' % (channel, steps, speed, direction.value))
+        
+        time.sleep(.005)
+        serial_data = self.serial.readline().strip()
+        return serial_data == b'OK.'
+        
     def servo(self, channel, angle):
         self._send('SERVO %d %d' % (channel, angle))
         
