@@ -342,16 +342,10 @@ void ex_stepper_command(SerialCommand scmd) {
     return;
   }
 
-  int chan, steps, speed, direction;
+  int chan, steps, speed;
   chan = atoi(chan_s);
   steps = atoi(steps_s);
   speed = atoi(speed_s);
-
-  if(*direction_s == 'F') {
-    direction = HIGH;
-  } else {
-    direction = LOW;
-  }
 
   chan--;
   if (chan < 0 || chan > MOTOR_CHANNEL_COUNT) {
@@ -361,7 +355,7 @@ void ex_stepper_command(SerialCommand scmd) {
 
   const ex_stepper motor = ex_stepper_channels[chan];
 
-  digitalWrite(motor.direction_pin, direction);
+  digitalWrite(motor.direction_pin, *direction_s == 'F');
 
   speed = max(1000 - speed, 1);
 
